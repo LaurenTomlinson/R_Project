@@ -1,0 +1,1058 @@
+---
+title: "R_project_final"
+output: html_document
+date: "2022-08-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Pt 1: EDA
+
+Load libraries and data 
+
+```{r cars}
+library(tidyverse)
+library(dplyr)
+library(splitstackshape)
+
+raw_df <- readr::read_csv("./archive/yelp_business.csv")
+```
+
+Clean data
+
+```{r pressure, echo=FALSE}
+clean_df =  raw_df
+
+#filter to only get arizona (the state with the most data entires )   
+cleandf_AZ = clean_df %>%
+  filter(state == 'AZ')
+
+#Make new df to cleanuup so raw df is untouched
+clean_df =  raw_df
+
+unique(clean_df$city)
+
+ #filter to only get arizona (the state with the most data entires )   
+cleandf_AZ = clean_df %>%
+  filter(state == 'AZ')
+
+
+#Get just restaurants 
+cleandf_AZ2 = cleandf_AZ %>%
+  filter(grepl('Restaurants', categories))
+
+
+#Get just open restaurants 
+cleandf_AZ = cleandf_AZ2  %>%
+  filter(is_open == 1)
+
+
+#split multiple values in categories column to each have own column, one value per observation
+install.packages("splitstackshape")
+library(splitstackshape)
+cleandf_AZ4  = cSplit_e(cleandf_AZ, "categories", sep = ";", mode = "binary", 
+         type = "character", fill = 0, drop = TRUE)
+
+
+#take only relevant columns 
+
+testdf = cleandf_AZ4 %>%
+  select(c('business_id', 'name', 'neighborhood', 'address', 'city', 'state', 'postal_code', 'latitude', 'longitude', 'stars', 'review_count', 'categories_American (New)', 'categories_American (Traditional)', 'categories_Asian Fusion', 'categories_Breakfast & Brunch', 'categories_Chinese', 'categories_Italian', 'categories_Japanese', 'categories_Mexican', 'categories_Pizza', 'categories_Salad', 'categories_Sandwiches', 'categories_Seafood', 'categories_Sushi Bars'))
+
+
+#Get only one cuisine per column and get rid of "categories_" prefix 
+testdf2 <- testdf %>%
+  pivot_longer(c(12:24),names_to = "cuisine",
+               values_to="cuisine_bool", values_drop_na = TRUE)%>%
+  filter(cuisine_bool == 1)
+
+testdf3 <- testdf2 %>% 
+           mutate(cuisine = str_remove(testdf2$cuisine, "categories_"))
+view(unique(testdf3$city))
+
+
+##Clean df to fix cities with multiple entries 
+testdf3$city <- gsub('MESA', 'Mesa', testdf3$city)
+testdf3$city <- gsub('Phx', 'Phoenix', testdf3$city)
+testdf3$city <- gsub('Scottdale', 'Scottsdale', testdf3$city)
+testdf3$city <- gsub('Glendale Az', 'Glendale', testdf3$city)
+testdf3$city <- gsub('Phoenix Valley', 'Phoenix', testdf3$city)
+testdf3$city <- gsub('Laveen Village Village', 'Laveen Village', testdf3$city)
+
+
+
+
+```
+
+
+
+#Explore cities with high review 
+
+```{r}
+#Get highest reviewed by rate (high star rests/total rests of that cuisine )
+histar = testdf3 %>%
+  filter(stars >= 4.5)%>%
+  count(cuisine)
+
+totcuis = testdf3 %>%
+  count(cuisine)
+
+histar_rate = inner_join(histar, totcuis, by = "cuisine")
+
+histar_rate$rate = histar_rate%>%
+  summarise((n.x/n.y)*100)
+#Breakfast and brunch, salads, sandwiches, japanese, mexican
+
+#By city with most high reviews:
+df_hirev_city = summary(as.factor(hi_rev_df$city))
+view(df_hirev_city)
+
+df_city_total = summary(as.factor(testdf3$city))
+view(df_city_total)
+
+#Phoenix, scottsdale, tempe, mesa, chandler 
+
+```
+
+
+#Get subset with just these cities and cuisines to explore data and compare to demographics
+
+Are locations statistically significant?
+
+```{r}
+#Make df of  column of T/F high star and "is phoenix" T/F for only phx and scottsdale 
+
+testdf3$hi_star = ifelse(testdf3$stars >= 4.5, 1, 0)
+
+testdf3$is_phx = ifelse(testdf3$city == 'Phoenix', 1, 0)
+
+df_phx_sd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Scottsdale') %>%
+  select('hi_star','is_phx')
+
+contin_phx_sd =  table(df_phx_sd)
+
+chisq.test(contin_phx_sd) #p-value = 0.2831.  
+
+#phoenix vs mesa ***
+df_phx_ma = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Mesa') %>%
+  select('hi_star','is_phx')
+
+contin_phx_ma =  table(df_phx_ma)
+
+chisq.test(contin_phx_ma)  #p-value = 0.0006982
+
+
+#Phoenix vs tempe 
+df_phx_te = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Tempe') %>%
+  select('hi_star','is_phx')
+
+contin_phx_te =  table(df_phx_te)
+
+chisq.test(contin_phx_te)   # p-value = 0.2327
+
+
+
+
+#Phoenix vs chandler ***
+df_phx_cd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Chandler') %>%
+  select('hi_star','is_phx')
+
+contin_phx_cd =  table(df_phx_cd)
+
+chisq.test(contin_phx_cd)   #p-value = 0.006164
+
+
+
+
+```
+
+
+Is cuisine type statisically significant? 
+```{r}
+#Make df of  column of T/F high star and "is breakfast and brunch" T/F for only breakfast and brunch and salad  
+
+testdf3$hi_star = ifelse(testdf3$stars >= 4.5, 1, 0)
+
+testdf3$is_bb = ifelse(testdf3$cuisine == 'Breakfast & Brunch', 1, 0)
+
+df_bb_sal = testdf3 %>%
+  filter(cuisine == 'Breakfast & Brunch'| cuisine ==  'Salad') %>%
+  select('hi_star','is_bb')
+
+contin_bb_sal =  table(df_bb_sal)
+
+chisq.test(contin_bb_sal) #p-value = 0.9699 
+
+#breakfast and brunch vs sandwiches 
+
+
+df_bb_san = testdf3 %>%
+  filter(cuisine == 'Breakfast & Brunch'| cuisine ==  'Sandwiches') %>%
+  select('hi_star','is_bb')
+
+contin_bb_san =  table(df_bb_san)
+
+chisq.test(contin_bb_san) #p-value = 0.001836
+
+#breakfast and brunch vs Japanese 
+
+
+df_bb_jap = testdf3 %>%
+  filter(cuisine == 'Breakfast & Brunch'| cuisine ==  'Japanese') %>%
+  select('hi_star','is_bb')
+
+contin_bb_jap =  table(df_bb_jap)
+
+chisq.test(contin_bb_jap) #p-value = 0.002525
+
+
+#breakfast and brunch vs mexican 
+
+
+df_bb_mex = testdf3 %>%
+  filter(cuisine == 'Breakfast & Brunch'| cuisine ==  'Mexican') %>%
+  select('hi_star','is_bb')
+
+contin_bb_mex =  table(df_bb_mex)
+
+chisq.test(contin_bb_mex) #p-value = 0.0009397
+
+```
+
+
+# Look at % of Mexican restaurant 
+```{r}
+mextest = testdf3%>%
+  filter(cuisine == 'Mexican')%>%
+  filter(city == 'Phoenix' | city == 'Scottsdale' | city == 'Mesa' | city == 'Tempe' | city == 'Chandler')%>%
+  select(city, cuisine)%>%
+  count(city)
+
+
+restest = testdf3%>%
+  select(city, cuisine)%>%
+  filter(city == 'Phoenix' | city == 'Scottsdale' | city == 'Mesa' | city == 'Tempe' | city == 'Chandler')%>%
+  count(city) 
+
+per_mex = restest%>%
+  select(city)
+
+per_mex$n = (mextest$n/restest$n)*100
+```
+
+
+#Explore which city has most % of high review Brunch places 
+
+```{r}
+brunchtest = testdf3%>%
+  filter(cuisine == 'Breakfast & Brunch')%>%
+  filter(city == 'Phoenix' | city == 'Scottsdale' | city == 'Mesa' | city == 'Tempe' | city == 'Chandler')%>%
+  select(city, cuisine, stars)%>%
+  filter(stars>=4.5)%>%
+  count(city)
+
+
+restest = testdf3%>%
+  select(city, cuisine)%>%
+  filter(city == 'Phoenix' | city == 'Scottsdale' | city == 'Mesa' | city == 'Tempe' | city == 'Chandler')%>%
+  count(city) 
+
+per_brunch = restest%>%
+  select(city)
+
+
+per_brunch$n = (brunchtest$n/restest$n)*100
+```
+
+
+#Stat significance for location of mexican rests?
+```{r}
+#Make df of  column of T/F high star and "is phoenix" T/F for only phx  
+
+testdf3$mex = ifelse(testdf3$cuisine == "Mexican", 1, 0)
+
+testdf3$is_phx = ifelse(testdf3$city == 'Phoenix', 1, 0)
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Scottsdale') %>%
+  select('mex','is_phx')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Mesa') %>%
+  select('mex','is_phx')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Tempe') %>%
+  select('mex','is_phx')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Phoenix'| city ==  'Chandler') %>%
+  select('mex','is_phx')
+
+contin_te_sd =  table(df_te_sd)
+
+chisq.test(contin_te_sd) 
+```
+
+
+
+#Stat significance for Japanese vs location?
+
+```{r}
+#Make df of  column of T/F high star and "is phoenix" T/F for only phx
+
+testdf3$jap = ifelse(testdf3$cuisine == "Japanese", 1, 0)
+
+testdf3$is_te = ifelse(testdf3$city == 'Tempe', 1, 0)
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Mesa') %>%
+  select('jap','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Phoenix') %>%
+  select('jap','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Scottsdale') %>%
+  select('jap','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Tempe') %>%
+  select('jap','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Chandler') %>%
+  select('jap','is_te')
+
+contin_te_sd =  table(df_te_sd)
+
+chisq.test(contin_te_sd) #p-value =  2.2e-16
+```
+
+
+#Stat signif for brunch vs location
+```{r}
+#Make df of  column of T/F high star and "is phoenix" T/F for only phx 
+
+testdf3$brunch = ifelse(testdf3$cuisine == "Breakfast & Brunch", 1, 0)
+
+testdf3$is_te = ifelse(testdf3$city == 'Tempe', 1, 0)
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Mesa') %>%
+  select('brunch','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Chandler') %>%
+  select('brunch','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Phoenix') %>%
+  select('brunch','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Tempe') %>%
+  select('brunch','is_te')
+
+df_te_sd = testdf3 %>%
+  filter(city == 'Tempe'| city ==  'Scottsdale') %>%
+  select('brunch','is_te')
+
+contin_te_sd =  table(df_te_sd)
+
+chisq.test(contin_te_sd) #p-value =  2.2e-16 
+```
+
+
+#Part 2: NLP and topic modeling 
+Code is adapted from tutorial: 
+https://medium.com/broadhorizon-cmotions/nlp-with-r-part-0-preparing-review-data-for-nlp-and-predictive-modeling-c1f2907d8312
+#Load data and library
+
+```{r}
+raw_rev_df <- readr::read_csv("./archive/yelp_review.csv")
+clean_rev_df =  raw_rev_df
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(plotly)
+library(corrplot)
+library(NLP)
+library(wordcloud)
+library(syuzhet)
+library(quanteda)
+library(quanteda.textplots)
+library(tidytext)
+library(tm)
+library(topicmodels)
+library(LDAvis)
+
+
+
+
+
+#Extract month column
+clean_rev_df <- clean_rev_df%>% 
+  mutate(month=as.numeric(format(date, "%m")))
+
+#Inner join on testdf3 and clean_rev_df
+
+df_rev_rate = inner_join(testdf3, clean_rev_df, by = "business_id")
+
+
+unique(df_rev_rate$city)
+
+
+#sentiment analysis 
+
+review <- as.character(df_rev_rate$text)
+
+```
+
+
+
+
+
+```{r}
+#Get only reviews from restaurants we are looking at (in AZ)
+df_rev_rate = inner_join(testdf3, clean_rev_df, by = "business_id")
+
+
+#
+test = df_rev_rate %>%
+  filter(stars.y > 4.0)
+
+
+#Get subset of reviews 
+
+
+library(dplyr)
+revrate_samp_df <- df_rev_rate %>% group_by(business_id) %>% sample_frac(0.09)
+
+
+
+
+#Data prep for NLP: cleaning 
+
+#Look at what text data looks like 
+df_rev_rate %>% select(text) %>% sample_n(5,seed=1234) %>% pull()
+
+
+revrate_samp_df %>% 
+    group_by(text) %>% 
+    summarize(n_reviews=n()) %>% 
+    mutate(pct=n_reviews/sum(n_reviews)) %>%
+    arrange(-n_reviews) %>% 
+    top_n(10,n_reviews) 
+
+```
+
+
+
+```{r}
+data <- revrate_samp_df %>% 
+  #replace linebreaks and some punctuation with space. Remove puncation and make lowercase. 
+  mutate(textClean=gsub('[[:punct:]]+', '',
+         gsub('\\\\n|\\.|\\,|\\;',' ',tolower(substr(text,3,nchar(text)-1))))) %>%
+  # create indicator validReview that is 0 for reviews to delete 
+  mutate(validReview=case_when(
+                               # review texts less than 2 characters in length
+                               nchar(textClean) <2 ~ 0,  
+                               # review texts of length 2, not being 'ok'
+                               nchar(textClean)==2 & 
+                                grepl('ok',textClean)==FALSE ~ 0, 
+                               # review texts of length 3, not being 'top','wow','oke'
+                               nchar(textClean) ==3 & 
+                                grepl('top|wow|oke',textClean)==FALSE ~ 0, 
+                               TRUE ~ 1))
+```
+
+
+
+
+```{r}
+#Looking at what we are going to remove and what we are going to keep
+test = data %>% 
+    group_by(textClean,validReview) %>% 
+    summarize(n_reviews=n()) %>% 
+    group_by(validReview) %>% 
+    arrange(validReview,desc(n_reviews)) %>% 
+    top_n(5,n_reviews) 
+```
+
+
+
+
+```{r}
+#Drop the validReview = 0 column
+data = data %>%
+  filter(validReview == 1)
+```
+
+
+
+
+```{r}
+#Tokenize review text 
+data = data %>%
+  ungroup()
+
+
+reviews_tokens <- data %>% 
+    select(review_id, textClean) %>%
+    unnest_tokens(word, textClean)  
+```
+
+
+```{r}
+#Take individual tokens and group by review id, break into number of tokens and put in bins. Then plot this against number of reviews to see how many reviews we have thet have a certain amount of tokens. We only want to keep reviews above a certain token count threshold, as reviews with more tokens can help us to identify topics within each review better.  
+reviews_tokens %>% 
+  group_by(review_id) %>% summarise(n_tokens = n()) %>% 
+  mutate(n_tokens_binned = cut(n_tokens, breaks = c(0,seq(25,250,25),Inf))) %>% 
+  group_by(n_tokens_binned) %>% summarise(n_reviews = n()) %>% 
+  ggplot(aes(x=n_tokens_binned,y=n_reviews)) + 
+    geom_bar(stat='identity',fill='blue') + theme_minimal() 
+```
+
+
+```{r}
+#Take individual tokens and group by review id, break into number of tokens and put in bins. Then plot this against number of reviews to see how many reviews we have thet have a certain amount of tokens. We only want to keep reviews above a certain token count threshold, as reviews with more tokens can help us to identify topics within each review better.
+
+reviews_tokens <- reviews_tokens %>% group_by(review_id) %>% 
+  mutate(n_tokens = n(),review_75tokens_plus = case_when(n_tokens > 100 ~1, TRUE ~ 0)) 
+```
+
+
+```{r}
+#How many reviews have > 50 tokens? 253,663
+reviews_tokens1 = reviews_tokens %>% group_by(review_50tokens_plus) %>% 
+  summarize(n_reviews = n_distinct(review_id)) %>% 
+  mutate(pct_reviews = n_reviews/sum(n_reviews)) 
+```
+
+```{r}
+#Remove <50 tokens 
+reviews_tokens <- reviews_tokens %>% filter(n_tokens>100)
+```
+
+```{r}
+install.packages("stopwords")
+library(stopwords)
+?stopwords()
+
+# Collect stop words and review list 
+stopwords_sw_iso <-stopwords::stopwords(language = 'en',source='stopwords-iso')
+
+
+#Words to keep: available, bottom, good, great, interesting, less, long, low, problems, problem, sensible  
+```
+
+
+
+```{r}
+#Words to keep: available, bottom, good, great, interesting, less, long, low, problems, problem, sensible
+#Set these words in their own vector 
+
+excludefromstopwords <- c('available', 'bottom', 'good', 'great', 'interesting', 'less', 
+                          'long', 'low', 'problems', 'problem', 'sensible')
+
+stopwords_sw_iso <- stopwords_sw_iso[!stopwords_sw_iso %in% excludefromstopwords]
+
+#number of stop words: 1287
+```
+
+
+```{r}
+#create stop words df 
+stop_words <- data.frame(word=unique(c(stopwords_sw_iso)),stringsAsFactors=F)
+stop_words <- stop_words %>% mutate(stopword=1)
+```
+
+```{r}
+#Remove stop words 
+reviews_tokens_ex_sw <- reviews_tokens %>% 
+    left_join(y=stop_words, by= "word", match = "all") %>% filter(is.na(stopword))
+```
+
+
+```{r}
+#Adding bigrams 
+#Start with text with stop words included, create bigrams, and keep only the bigrams that do not include any stop words 
+
+bigrams <- reviews_tokens %>%
+    group_by(review_id)  %>% 
+    summarize(textClean=paste(word,collapse=' ')) %>%
+    unnest_tokens(bigram, token = "ngrams",n = 2, textClean)
+```
+
+
+```{r}
+#Separate into columns by word  
+bigrams_separated <- bigrams %>%
+    separate(bigram, c('word1', 'word2'), sep=" ")
+```
+
+
+
+```{r}
+#Filter words to get rid of bigrams that contain stop words 
+bigrams_filtered <- bigrams_separated %>%
+    filter(!word1 %in% stop_words$word & !word2 %in% stop_words$word)
+```
+
+
+```{r}
+#parse together bigrams again
+bigrams_united <- bigrams_filtered %>%
+    unite(bigram, word1, word2, sep = '_')
+```
+
+```{r}
+#Read in sentiment words  
+positive_words_nl <- 
+  read_csv("https://bhciaaablob.blob.core.windows.net/cmotionsnlpblogs/positive_words_nl.txt", 
+           col_names=c('word'),col_types='c') %>% mutate(pos=1,neg=0)
+
+
+
+negative_words_nl <- 
+  read_csv("https://bhciaaablob.blob.core.windows.net/cmotionsnlpblogs/negative_words_nl.txt", 
+           col_names=c('word'),col_types='c') %>% mutate(pos=0,neg=1) 
+```
+
+
+
+```{r}
+#combine positive and negative tokens and print statistics
+sentiment_nl <- rbind(positive_words_nl, negative_words_nl) 
+sentiment_nl %>% summarize(sentiment_words=n_distinct(word),positive_words=sum(pos),
+                           negative_words=sum(neg)) %>% print()
+```
+
+
+
+```{r}
+# score sentiment for review texts
+review_sentiment <- data %>% select(review_id, textClean) %>% 
+ unnest_tokens(word, textClean) %>% left_join(sentiment_nl,by='word') %>% 
+ group_by(review_id) %>% summarize(positive=sum(pos,na.rm=T),negative=sum(neg,na.rm=T)) %>%
+ mutate(sentiment = positive - negative, sentiment_standardized = 
+          case_when(positive + negative==0~0,TRUE~sentiment/(positive + negative)))
+```
+
+
+```{r}
+# score sentiment for review texts
+review_sentiment <- data %>% select(restoReviewId, reviewTextClean) %>% 
+ unnest_tokens(word, reviewTextClean) %>% left_join(sentiment_nl,by='word') %>% 
+ group_by(restoReviewId) %>% summarize(positive=sum(pos,na.rm=T),negative=sum(neg,na.rm=T)) %>%
+ mutate(sentiment = positive - negative, sentiment_standardized = 
+          case_when(positive + negative==0~0,TRUE~sentiment/(positive + negative)))
+```
+
+
+```{r}
+# plot histogram of sentiment score
+review_sentiment %>% ggplot(aes(x=sentiment_standardized))+ geom_histogram(fill='navyblue') + 
+    theme_minimal() +labs(title='histogram of sentiment score (standardized)')
+```
+
+
+
+```{r}
+#Save review+ rest id as csv file for analytics 
+
+# original review text
+reviewText <- data %>% select(review_id,text) 
+# add cleaned review text
+reviewTextClean <- reviews_tokens_ex_sw %>% group_by(review_id) %>% 
+  summarize(reviewTextClean=paste(word,collapse=' '))
+# add bigrams without stopwords
+reviewBigrams <- bigrams_united %>% group_by(review_id) %>% 
+  summarize(bigrams=paste(bigram,collapse=' ')) 
+
+# combine original review text with cleaned review text
+reviews <- reviewText %>% inner_join(reviewTextClean,by='review_id') %>% 
+  left_join(reviewBigrams,by='review_id')
+
+#write to file
+write.csv(reviews,'reviews.csv',row.names=FALSE)
+```
+
+
+
+```{r}
+michelin <-   read.csv(file = 
+  'https://bhciaaablob.blob.core.windows.net/cmotionsnlpblogs/michelin_RestoIds.csv',
+  header=TRUE,row.names = 'X')
+
+# create dataframe with per restaurant an indicator to specify it is a Michelin restaurant 
+df_michelin <- data.frame(restoId=michelin,ind_michelin=1)
+cat(paste0('Number of Michelin restaurants in dataset: ',nrow(df_michelin)))
+```
+
+
+
+```{r}
+#Subset that indicates whether a review is for a high star (>4.5) rest
+revrate_samp_df$high_star = revrate_samp_df$stars.x >= 4.5
+
+revrate_samp_df = revrate_samp_df %>%
+  ungroup()
+
+df_highstar = revrate_samp_df %>%
+  select(review_id, high_star)
+
+#18.7% are high reviews 
+mean(df_highstar$high_star)
+```
+
+
+
+```{r}
+# create dataframe with michelin indicator per review (filter reviews with prepared reviewText) 
+labels <- data %>% inner_join(reviews,by='review_id') %>% 
+  left_join(df_highstar,by='review_id') %>% select(review_id,high_star) %>% 
+  mutate(high_star=replace_na(high_star,0))
+
+#count # of michelin reviews (and % of reviews that is for michelin restaurant)
+cat(paste0('Number of Michelin restaurant reviews: ',sum(labels$high_star),' (',
+    scales::percent(sum(labels$high_star)/nrow(labels),accuracy=0.1),' of reviews)'))
+
+#save csv
+write.csv(labels,'labels.csv',row.names=FALSE)
+```
+
+```{r}
+# select ids for restaurant reviews and restaurants from prepared data 
+#  (filter reviews with prepared reviewText)
+restoid <- data %>% inner_join(reviews,by='review_id') %>% select(review_id,business_id) 
+
+# save to file
+write.csv(restoid,'restoid.csv',row.names=FALSE)
+```
+
+```{r}
+# gerenate a sample of 70% of restoReviews, used for training purposes 
+#  (filter reviews with prepared reviewText)
+set.seed(101) 
+sample <- sample.int(n = nrow(data), size = floor(.7*nrow(data)), replace = F)
+data$train = 0
+data$train[sample] = 1
+trainids = data  %>% inner_join(reviews,by='review_id') %>% select(review_id,train) 
+
+# save to file
+write.csv(trainids,'trainids.csv',row.names=FALSE)
+```
+
+```{r}
+# add sentiment score and select key and relevant features
+features <- data %>% 
+  inner_join(review_sentiment,by='review_id') %>% 
+  select(review_id, stars.x, stars.y, review_count, 
+         sentiment_standardized) 
+
+# save to file
+write.csv(features,'features.csv',row.names=FALSE)
+```
+
+##The analysis (Latent Dirichlet Allocation (LDA))
+```{r}
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(tm)
+library(LDAvis)
+```
+
+
+```{r}
+## combine unigrams and bigrams into reviewTextClean and divide text into separate words
+reviews_tokens <- reviews %>% 
+    mutate(reviewTextClean = paste0(reviewTextClean,bigrams)) %>%
+    select(review_id, reviewTextClean) %>%
+    unnest_tokens(token, reviewTextClean) %>%
+    # filter out reviews with less than 25 tokens
+    group_by(review_id) %>% mutate(n_tokens = n()) %>% filter(n_tokens>=25) %>% 
+    ungroup() %>% select(-n_tokens) 
+```
+
+
+```{r}
+# what % of all reviews are high star reviews?
+labels %>% group_by(high_star) %>% summarize(n=n()) %>% mutate(pct=scales::percent(n/sum(n)))
+```
+
+
+```{r}
+# sample reviews: Take all michelin train reviews and complement with 
+# non-michelin train cases to include 10K reviews in total
+reviews_tokens_train <- reviews_tokens %>% 
+    inner_join(labels,by = "review_id") %>% 
+    inner_join(trainids,by = "review_id") %>% 
+    mutate(train_smpl = case_when(
+             # sample all reviews that are michelin review and in the train subset 
+             train==1 & high_star == 1 ~ 1, 
+             # complete 10K sample by adding 7.1K reviews from non-michelin train reviews
+             #train==1 & rv < (7100/95000) ~ 1,  
+             # all other reviews are not in the train_smpl
+             TRUE~0))   
+
+# what reviews will we keep?
+reviews_tokens_train %>% group_by(train_smpl,train,high_star) %>% 
+  summarize(n_reviews=n_distinct(review_id),n_tokens=n_distinct(token)) %>% print()
+
+#create train data using train_smpl as filter
+reviews_tokens_train <- reviews_tokens_train %>% filter(train_smpl == 1)
+
+sprintf('%s unique reviews and %s unique tokens selected to train topic model',
+    n_distinct(reviews_tokens_train$review_id),n_distinct(reviews_tokens_train$token))
+```
+
+```{r}
+# what is the frequency of tokens being used 
+reviews_tokens_train %>% 
+  group_by(token) %>% summarize(token_freq=n()) %>% 
+  mutate(token_freq_binned = case_when(token_freq>20~20,TRUE~as.numeric(token_freq))) %>% 
+  group_by(token_freq_binned) %>% summarise(n_tokens = n()) %>% 
+  mutate(pct_tokens = n_tokens/sum(n_tokens),
+         cumpct_tokens = cumsum(n_tokens)/sum(n_tokens)) %>% 
+  ggplot(aes(x=token_freq_binned)) + 
+          scale_y_continuous(labels = scales::percent_format(accuracy = 1)) + 
+          geom_bar(aes(y=pct_tokens),stat='identity',fill='blue') +  
+          geom_line(aes(y=cumpct_tokens),stat='identity',color='orange',linetype='dashed') + 
+          geom_text(aes(y=cumpct_tokens,label=scales::percent(cumpct_tokens,accuracy=1)),
+                    size=3) + theme_minimal() + 
+          ggtitle("Frequency of token in Corpus (all reviews)") + xlab("token frequency") +
+          ylab("% of all tokens")
+```
+
+
+```{r}
+reviews_tokens_train %>% 
+  group_by(token) %>% summarize(token_freq=n()) %>% 
+  mutate(min_5_freq = case_when(token_freq<5~'token frequency: <5',
+                                TRUE~'token frequency: >=5')) %>% 
+  group_by(min_5_freq) %>% summarise(n_unique_tokens = n(),n_tokens=sum(token_freq)) %>% 
+  mutate(pct_unique_tokens = scales::percent(n_unique_tokens / sum(n_unique_tokens)),
+         pct_all_tokens=scales::percent(n_tokens / sum(n_tokens))) 
+```
+#Only focus on tokens that occur > 5 times in corpus. representing 99% of all reviews. DTM matrix has all reviews in the rows and all tokens in the columns 
+#Using overall token frequency, NOT the review-specific token frequency to find much more GENERAL topioc model  
+```{r}
+# remove infrequent tokens
+reviews_tokens_train_smpl <- reviews_tokens_train %>% 
+  group_by(token) %>% mutate(token_freq=n()) %>%  filter(token_freq>=5)
+
+# create document term matrix
+dtm <- reviews_tokens_train_smpl %>% 
+  cast_dtm(document = review_id,term = token,value = token_freq)
+
+#check dimenstions of dtm
+cat(paste0('DTM dimensions: Documents (',dim(dtm)[1],') x Tokens (',dim(dtm)[2],')',
+           ' (average token frequency: ',round(sum(dtm)/sum(dtm!=0),2),')'))
+```
+
+```{r}
+#How to pick a  k? Trial and error
+lda_fit <- LDA(dtm, k = 3)
+```
+
+
+```{r}
+# phi (topic - token distribution matrix) -  topics in rows, tokens in columns:
+phi <- posterior(lda_fit)$terms %>% as.matrix
+cat(paste0('Dimensions of phi (topic-token-matrix): ',paste(dim(phi),collapse=' x '),'\n'))
+cat(paste0('phi examples (8 tokens): ','\n'))
+phi[,1:8] %>% as_tibble() %>% mutate_if(is.numeric, round, 5) %>% print()
+
+# theta (document - topic distribution matrix) -  documents in rows, topic probs in columns:
+theta <- posterior(lda_fit)$topics %>% as.matrix
+cat(paste0('\n\n','Dimensions of theta (document-topic-matrix): ',
+           paste(dim(theta),collapse=' x '),'\n'))
+
+cat(paste0('theta examples (8 documents): ','\n'))
+theta[1:8,] %>% as_tibble() %>% mutate_if(is.numeric, round, 5) %>% 
+  setNames(paste0('Topic', names(.))) %>% print()
+```
+
+```{r}
+# get token probability per token per topic
+topics <- tidy(lda_fit)
+
+# only select top-10 terms per topic based on token probability within a topic
+plotinput <- topics %>%
+  mutate(topic = as.factor(paste0('Topic',topic))) %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# plot highest probability terms per topic
+names <- levels(unique(plotinput$topic))
+colors <- RColorBrewer::brewer.pal(n=length(names),name="Set2")
+
+plist <- list()
+
+for (i in 1:length(names)) {
+  d <- subset(plotinput,topic == names[i])[1:10,]
+  d$term <- factor(d$term, levels=d[order(d$beta),]$term)
+  
+  p1 <- ggplot(d, aes(x = term, y = beta, width=0.75)) + 
+  labs(y = NULL, x = NULL, fill = NULL) +
+  geom_bar(stat = "identity",fill=colors[i]) +
+  facet_wrap(~topic) +
+  coord_flip() +
+  guides(fill=FALSE) +
+  theme_bw() + theme(strip.background  = element_blank(),
+                     panel.grid.major = element_line(colour = "grey80"),
+                     panel.border = element_blank(),
+                     axis.ticks = element_line(size = 0),
+                     panel.grid.minor.y = element_blank(),
+                     panel.grid.major.y = element_blank() ) +
+  theme(legend.position="bottom") 
+
+  plist[[names[i]]] = p1
+}
+
+library(gridExtra)
+do.call("grid.arrange", c(plist, ncol=3))
+```
+
+
+```{r}
+# phi (topic - token distribution matrix) - tokens in rows, topic scores in columns:
+phi <- posterior(lda_fit)$terms %>% as.matrix 
+
+# theta (document - topic distribution matrix) - documents in rows, topic probs in columns:
+theta <- posterior(lda_fit)$topics %>% as.matrix 
+
+# number of tokens per document
+doc_length <- reviews_tokens_train_smpl %>% group_by(review_id) %>% 
+  summarize(doc_length=n()) %>% select(doc_length) %>% pull() 
+
+# vocabulary: unique tokens
+vocab <- colnames(phi) 
+
+# overall token frequency
+term_frequency <- reviews_tokens_train_smpl %>% group_by(token) %>% 
+  summarise(n=n()) %>% arrange(match(token, vocab)) %>% select(n) %>% pull() 
+
+
+# create JSON containing all needed elements
+json <- createJSON(phi, theta, doc_length, vocab, term_frequency)
+```
+
+
+```{r}
+# modify the tokens to consider in topic model
+reviews_tokens_train_smpl_new <- reviews_tokens_train %>%
+  # remove infrequent tokens (<5)
+  group_by(token) %>% mutate(token_freq=n()) %>%  filter(token_freq>=5) %>% ungroup() %>%
+  # combine some tokens that are dominant in solutions and represent same meaning
+
+  # remove some 'too frequent' tokens 
+  filter(!token  %in% c('food','good','great','nice','delicious','time', 'stars', '5','day', 'bit', 'people', 'green', 'taste', 'super', 'yelp', 'reviews', 'huge', 'lot', 'long', 'wait', 'taste','20', 'pretty', 'check', 'times', 'told','friendly','told', 'amazing','recommend','restaurant', 'phoenix', 'bad', 'love', 'loved', 'awesome','meal','eat','sandwich','sandwiches','lunch','dinner','favorite','night','pizza','italian','roll', 'table', 'happy','hour','minutes', 'breakfast', 'menu', 'perfect','tasted','fantastic','visit','house'))  
+
+
+# recreate the document term matrix after modifying the tokens to consider
+dtm_new <- reviews_tokens_train_smpl_new %>% 
+    cast_dtm(document = review_id,term = token,value = token_freq)
+
+#check dimensions of dtm
+cat(paste0('DTM dimensions: Documents (',dim(dtm_new)[1],') x Tokens (',dim(dtm_new)[2],')',
+           ' (average token frequency: ',round(sum(dtm_new)/sum(dtm_new!=0),2),')'))
+
+# estimate lda with k topics, set control variables nstart=n to have n runs, 
+#   best=FALSE to keep all run results and set the seed for reproduction
+lda_fit_def <- LDA(dtm_new, k = 7,control = list(nstart=1,best=TRUE,seed=5678))
+saveRDS(lda_fit_def,'lda_fit_def.RDS')
+```
+
+```{r}
+# get token probability per token per topic
+topics <- tidy(lda_fit_def)
+
+topiclabels <- data.frame(topic=seq(1,5),
+                          label=c('Well_roundedness[1]','Vibe[2]',
+                                  'Service[3]','Taste[4]',
+                                  'Freshness[1]'))
+
+# only select top-10 terms per topic based on token probability within a topic
+plotinput <- topics %>% 
+  inner_join(topiclabels,by="topic") %>%
+  group_by(label) %>%
+  top_n(10, beta) %>% 
+  ungroup() %>%
+  arrange(label, -beta)
+
+# plot highest probability terms per topic
+names <- unique(plotinput$label)
+colors <- RColorBrewer::brewer.pal(n=length(names),name="Set2")
+
+plist <- list()
+
+for (i in 1:length(names)) {
+  d <- subset(plotinput,label == names[i])[1:10,]
+  d$term <- factor(d$term, levels=d[order(d$beta),]$term)
+  
+  p1 <- ggplot(d, aes(x = term, y = beta, width=0.75)) + 
+  labs(title=names[i],y = NULL, x = NULL, fill = NULL) +
+  geom_bar(stat = "identity",fill=colors[i]) +
+  coord_flip() +
+  guides(fill=FALSE) +
+  theme_bw() + theme(strip.background  = element_blank(),
+                     panel.grid.major = element_line(colour = "grey80"),
+                     panel.border = element_blank(),
+                     axis.ticks = element_line(size = 0),
+                     panel.grid.minor.y = element_blank(),
+                     panel.grid.major.y = element_blank(),
+                     plot.title = element_text(size=5)) +
+  theme(legend.position="bottom") 
+
+  plist[[names[i]]] = p1
+}
+
+library(gridExtra)
+do.call("grid.arrange", c(plist, ncol=4))
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
